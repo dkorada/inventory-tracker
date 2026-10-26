@@ -1,0 +1,29 @@
+# One-click Netlify deployment: React app as static files + Express API as a Function.
+[build]
+  command = "npm run build:netlify"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # Prisma ships a native query engine, so keep it out of the bundle and ship the files as-is.
+  external_node_modules = ["@prisma/client", ".prisma"]
+  included_files = [
+    "server/prisma/demo.db",
+    "node_modules/.prisma/client/**",
+  ]
+
+# API calls go to the function (status 200 = rewrite, the URL stays /api/...)
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app fallback so deep links like /products work on refresh
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

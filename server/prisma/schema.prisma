@@ -1,0 +1,68 @@
+// StockPilot data model
+// See docs/DATA_MODEL.md for the reasoning behind each table and field.
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" for local dev; rhel-openssl-3.0.x for Netlify Functions (AWS Lambda).
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A product grouping used for filtering and reporting (e.g. "Beverages").
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  /// Hex colour used for the category badge in the UI.
+  color     String    @default("#6366f1")
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+/// A stocked item. `quantity` is a running balance that is only ever changed
+/// together with a StockMovement row, so the movement log always explains it.
+model Product {
+  id           Int             @id @default(autoincrement())
+  /// Stock keeping unit. Stored upper-case; unique across all products.
+  sku          String          @unique
+  name         String
+  description  String?
+  categoryId   Int
+  category     Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  /// Money is stored in integer cents to avoid floating point rounding errors.
+  costCents    Int
+  saleCents    Int
+  /// Units on hand. Never negative (enforced in the service layer).
+  quantity     Int             @default(0)
+  /// Products at or below this level are flagged as low stock.
+  reorderLevel Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  movements    StockMovement[]
+
+  @@index([categoryId])
+  @@index([name])
+}
+
+/// Append-only ledger of every change to a product's quantity.
+model StockMovement {
+  id            Int      @id @default(autoincrement())
+  productId     Int
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// RECEIPT | SALE | ADJUSTMENT (SQLite has no native enums; validated in the API).
+  type          String
+  /// Signed change: positive for receipts, negative for sales, either for adjustments.
+  change        Int
+  /// Product quantity immediately after this movement, for an auditable history.
+  quantityAfter Int
+  note          String?
+  /// When the movement happened (may be back-dated by the user).
+  occurredAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([productId, occurredAt])
+  @@index([occurredAt])
+}
